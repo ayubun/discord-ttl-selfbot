@@ -1,4 +1,4 @@
-const PREFIX = '[UNDISCORD]';
+const PREFIX = '[DISCORD-TTL-SELFBOT]';
 
 import { log } from './utils/log.js';
 import {
@@ -406,6 +406,7 @@ class UndiscordCore {
             // 400 can happen if the thread is archived (code=50083)
             // in this case we need to "skip" this message from the next search
             // otherwise it will come up again in the next page (and fail to delete again)
+            // TODO: Support unarchiving the thread
             log.warn('Error deleting message (Thread is archived). Will increment offset so we don\'t search this in the next page...');
             this.state.offset++;
             this.state.failCount++;
