@@ -7,6 +7,7 @@ import { log } from './undiscord/utils/log.js';
 const args = process.argv.slice(2);
 const options = {};
 let verboseLogging = false;
+let debugLogging = false;
 
 // Help text
 const showHelp = () => {
@@ -33,6 +34,7 @@ Options:
   --max-attempts       Max attempts to delete a message (default: 2)
   --no-confirm         Skip confirmation prompt
   --verbose, -v        Show verbose logs
+  --debug, -d          Show debug logs
   --help, -h           Show this help message
 
 Examples:
@@ -116,7 +118,7 @@ for (let i = 0; i < args.length; i++) {
     i++;
     break;
   case '--search-delay':
-    options.searchDelay = parseInt(nextArg) || 100;
+    options.searchDelay = parseInt(nextArg) || 30000;
     i++;
     break;
   case '--delete-delay':
@@ -134,6 +136,10 @@ for (let i = 0; i < args.length; i++) {
   case '-v':
     verboseLogging = true;
     break;
+  case '--debug':
+  case '-d':
+    debugLogging = true;
+    break
   default:
     if (arg.startsWith('-')) {
       console.error(`Unknown option: ${arg}`);
@@ -163,7 +169,7 @@ if (!options.channelIds || options.channelIds.length === 0) {
 }
 
 // Set defaults
-options.searchDelay = options.searchDelay || 100;
+options.searchDelay = options.searchDelay || 30000;
 options.deleteDelay = options.deleteDelay || 1000;
 options.maxAttempt = options.maxAttempt || 2;
 options.askForConfirmation = options.askForConfirmation !== false;
@@ -203,12 +209,11 @@ async function main() {
   try {
     log.info('🔧 Configuring undiscord...');
 
+    if (!debugLogging) {
+      console.debug = function() {};
+    }
     if (!verboseLogging) {
-        // console.log = function() {};
-        // console.warn = function() {};
-        // console.error = function() {};
-        // console.info = function() {};
-        console.debug = function() {};
+      log.verb = function() {};
     }
     
     // Set options
