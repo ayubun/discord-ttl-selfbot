@@ -61,6 +61,7 @@ class UndiscordCore {
   // events
   onStart = undefined;
   onProgress = undefined;
+  onPage = undefined; // NOTE(ayubun): when the current search page completes
   onStop = undefined;
 
   resetState() {
@@ -176,6 +177,8 @@ class UndiscordCore {
         this.state.running = false;
       }
 
+      if (this.onPage) this.onPage(this.state, this.stats)
+
       // wait before next page (fix search page not updating fast enough)
       log.verb(`Waiting ${(this.options.searchDelay / 1000).toFixed(2)}s before next page...`);
       await wait(this.options.searchDelay);
@@ -185,7 +188,7 @@ class UndiscordCore {
     this.stats.endTime = new Date();
     log.success(`Ended at ${this.stats.endTime.toLocaleString()}! Total time: ${msToHMS(this.stats.endTime.getTime() - this.stats.startTime.getTime())}`);
     this.printStats();
-    log.debug(`Deleted ${this.state.delCount} messages, ${this.state.failCount} failed.\n`);
+    log.info(`Deleted ${this.state.delCount} messages, ${this.state.failCount} failed.\n`);
 
     if (this.onStop) this.onStop(this.state, this.stats);
   }
@@ -293,7 +296,7 @@ class UndiscordCore {
     }
     const data = await resp.json();
     this.state._seachResponse = data;
-    console.log(PREFIX, 'search', data);
+    console.debug(PREFIX, 'search', data);
     return data;
   }
 
@@ -312,13 +315,15 @@ class UndiscordCore {
     messagesToDelete = messagesToDelete.filter(msg => msg.type === 0 || (msg.type >= 6 && msg.type <= 21));
     messagesToDelete = messagesToDelete.filter(msg => msg.pinned ? this.options.includePinned : true);
 
+
+    // todo: fix this for cli
     // custom filter of messages
-    try {
-      const regex = new RegExp(this.options.pattern, 'i');
-      messagesToDelete = messagesToDelete.filter(msg => regex.test(msg.content));
-    } catch (e) {
-      log.warn('Ignoring RegExp because pattern is malformed!', e);
-    }
+    // try {
+    //   const regex = new RegExp(this.options.pattern, 'i');
+    //   messagesToDelete = messagesToDelete.filter(msg => regex.test(msg.content));
+    // } catch (e) {
+    //   log.warn('Ignoring RegExp because pattern is malformed!', e);
+    // }
 
     // create an array containing everything we skipped. (used to calculate offset for next searches)
     const skippedMessages = discoveredMessages.filter(msg => !messagesToDelete.find(m => m.id === msg.id));
@@ -326,7 +331,7 @@ class UndiscordCore {
     this.state._messagesToDelete = messagesToDelete;
     this.state._skippedMessages = skippedMessages;
 
-    console.log(PREFIX, 'filterResponse', this.state);
+    console.debug(PREFIX, 'filterResponse', this.state);
   }
 
   async deleteMessagesFromList() {
@@ -334,7 +339,7 @@ class UndiscordCore {
       const message = this.state._messagesToDelete[i];
       if (!this.state.running) return log.error('Stopped by you!');
 
-      log.debug(
+      log.info(
         // `${((this.state.delCount + 1) / this.state.grandTotal * 100).toFixed(2)}%`,
         `[${this.state.delCount + 1}/${this.state.grandTotal}] ` +
         `<sup>${new Date(message.timestamp).toLocaleString()}</sup> ` +

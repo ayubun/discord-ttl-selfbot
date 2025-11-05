@@ -54,5 +54,8 @@
   },
   "lint-staged": {
     "src/**.js": "npm run lint"
+  },
+  "dependencies": {
+    "chalk": "^5.6.2"
   }
 }

@@ -6,6 +6,7 @@ import { log } from './undiscord/utils/log.js';
 // Parse command line arguments
 const args = process.argv.slice(2);
 const options = {};
+let verboseLogging = false;
 
 // Help text
 const showHelp = () => {
@@ -31,6 +32,7 @@ Options:
   --delete-delay       Delay between delete requests (ms, default: 1000)
   --max-attempts       Max attempts to delete a message (default: 2)
   --no-confirm         Skip confirmation prompt
+  --verbose, -v        Show verbose logs
   --help, -h           Show this help message
 
 Examples:
@@ -70,11 +72,13 @@ for (let i = 0; i < args.length; i++) {
     i++;
     break;
   case '--guild-id':
+  case '--guild-ids':
   case '-g':
-    options.guildId = nextArg;
+    options.guildIds = nextArg ? nextArg.split(',').map(id => id.trim()) : [];
     i++;
     break;
   case '--channel-id':
+  case '--channel-ids':
   case '-c':
     options.channelIds = nextArg ? nextArg.split(',').map(id => id.trim()) : [];
     i++;
@@ -126,6 +130,10 @@ for (let i = 0; i < args.length; i++) {
   case '--no-confirm':
     options.askForConfirmation = false;
     break;
+  case '--verbose':
+  case '-v':
+    verboseLogging = true;
+    break;
   default:
     if (arg.startsWith('-')) {
       console.error(`Unknown option: ${arg}`);
@@ -141,16 +149,17 @@ if (!options.authToken) {
   process.exit(1);
 }
 
-if (!options.guildId) {
+if (!options.guildIds || options.guildIds.length === 0) {
   console.error('Error: --guild-id is required');
   showHelp();
   process.exit(1);
 }
 
 if (!options.channelIds || options.channelIds.length === 0) {
-  console.error('Error: --channel-id is required');
-  showHelp();
-  process.exit(1);
+  // console.error('Error: --channel-id is required');
+  // showHelp();
+  // process.exit(1);
+  options.channelIds = [];
 }
 
 // Set defaults
@@ -178,7 +187,7 @@ undiscord.onStart = (state, stats) => {
   log.info('🚀 Started deletion process');
 };
 
-undiscord.onProgress = (state, stats) => {
+undiscord.onPage = (state, stats) => {
   const percent = state.grandTotal > 0 ? ((state.delCount + state.failCount) / state.grandTotal * 100).toFixed(1) : 0;
   log.info(`Progress: ${percent}% (${state.delCount + state.failCount}/${state.grandTotal}) - Deleted: ${state.delCount}, Failed: ${state.failCount}`);
 };
@@ -193,27 +202,44 @@ undiscord.onStop = (state, stats) => {
 async function main() {
   try {
     log.info('🔧 Configuring undiscord...');
+
+    if (!verboseLogging) {
+        // console.log = function() {};
+        // console.warn = function() {};
+        // console.error = function() {};
+        // console.info = function() {};
+        console.debug = function() {};
+    }
     
     // Set options
     undiscord.options = {
       ...undiscord.options,
       ...options,
-      channelId: options.channelIds.length === 1 ? options.channelIds[0] : undefined
+      channelId: options.channelIds.length === 1 ? options.channelIds[0] : undefined,
+      guildId: options.guildIds.length === 1 ? options.guildIds[0] : undefined,
+      channelIds: undefined,
+      guildIds: undefined,
     };
-
-    log.info('Configuration:', {
-      guildId: options.guildId,
-      channelIds: options.channelIds,
-      authorId: options.authorId || 'not specified',
-      searchDelay: options.searchDelay,
-      deleteDelay: options.deleteDelay
-    });
+    // const finalOptions = { ... undiscord.options };
+    // delete finalOptions.authToken;
+    // log.info('Configuration:', finalOptions);
 
     // Run deletion
-    if (options.channelIds.length > 1) {
+    if (options.guildIds.length > 1) {
+      if (options.channelIds.length > 0) {
+        log.error('❌ Channel ID must be unset if multiple Guild IDs are provided');
+        showHelp();
+        process.exit(1);
+      }
+      const jobs = options.guildIds.map(guildId => ({
+        guildId: guildId,
+      }))
+      log.info(`📦 Running batch job for ${jobs.length} guilds`);
+      await undiscord.runBatch(jobs)
+    } else if (options.channelIds.length > 1) {
       // Multiple channels - run batch
       const jobs = options.channelIds.map(channelId => ({
-        guildId: options.guildId,
+        guildId: undiscord.options.guildId,
         channelId: channelId,
       }));
       
@@ -221,7 +247,7 @@ async function main() {
       await undiscord.runBatch(jobs);
     } else {
       // Single channel
-      log.info('🎯 Running single channel deletion');
+      log.info('🎯 Running deletion');
       await undiscord.run();
     }
     

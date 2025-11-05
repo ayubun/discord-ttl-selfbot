@@ -2,6 +2,12 @@
 
 work in progress~
 
+todos:
+- fix confirmation prompts (only works with --no-confirm atm)
+- fix pattern exclusions / matching
+- fix search delays not working ..
+- fix script ending after one iteration
+
 see repo description for info / goals c:
 
 **Any tool that automates actions on user accounts, including this one, could result in account termination.** (see [self-bots][self-bots]).  
