@@ -19,8 +19,10 @@ Usage: node cli.js [options]
 Options:
   --token, -t          Discord authorization token (required)
   --author-id, -a      Author ID of messages to delete
-  --guild-id, -g       Server/Guild ID (use "@me" for DMs)
-  --channel-id, -c     Channel ID or comma-separated list
+  --guild-id, -g       Server/Guild ID (use "@me" for DMs) or comma-separated list
+  --channel-id, -c     Channel ID(s) to delete from
+  --ignore-guild-id    Server/Guild ID(s) to IGNORE
+  --ignore-dm-id       DM Channel ID(s) to IGNORE
   --min-id             Only delete messages after this ID
   --max-id             Only delete messages before this ID
   --content            Filter messages containing this text
@@ -85,6 +87,20 @@ for (let i = 0; i < args.length; i++) {
     options.channelIds = nextArg ? nextArg.split(',').map(id => id.trim()) : [];
     i++;
     break;
+  case '--ignore-guild-id':
+  case '--ignore-guild-ids':
+  case '--ignored-guild-id':
+  case '--ignored-guild-ids':
+    options.ignoredGuildIds = nextArg ? nextArg.split(',').map(id => id.trim()) : [];
+    i++;
+    break;
+  case '--ignore-dm-id':
+  case '--ignore-dm-ids':
+  case '--ignored-dm-id':
+  case '--ignored-dm-ids':
+    options.ignoredDmIds = nextArg ? nextArg.split(',').map(id => id.trim()) : [];
+    i++;
+    break
   case '--min-id':
     options.minId = nextArg;
     i++;
@@ -155,17 +171,23 @@ if (!options.authToken) {
   process.exit(1);
 }
 
-if (!options.guildIds || options.guildIds.length === 0) {
-  console.error('Error: --guild-id is required');
-  showHelp();
-  process.exit(1);
+if (!options.channelIds || options.channelIds.length === 0) {
+  options.channelIds = [];
 }
 
-if (!options.channelIds || options.channelIds.length === 0) {
-  // console.error('Error: --channel-id is required');
-  // showHelp();
-  // process.exit(1);
-  options.channelIds = [];
+if (!options.guildIds || options.guildIds.length === 0) {
+  options.guildIds = [];
+  if (options.channelIds.length > 0) {
+    console.error('Error: --channel-ids cannot be provided if --guild-id is empty');
+    showHelp();
+    process.exit(1);
+  }
+} else if (options.guildIds.length > 1) {
+  if (options.channelIds.length > 0) {
+    console.error('Error: --channel-ids cannot be provided if --guild-ids is greater than one');
+    showHelp();
+    process.exit(1);
+  }
 }
 
 // Set defaults
@@ -204,6 +226,60 @@ undiscord.onStop = (state, stats) => {
   process.exit(0);
 };
 
+async function getAllGuildIds(authToken) {
+  const API_URL = `https://discord.com/api/v9/users/@me/guilds`;
+  let resp;
+  try {
+    resp = await fetch(API_URL, {
+      headers: {
+        'Authorization': authToken,
+      }
+    });
+    if (!resp.ok) {
+      throw Error('response was not ok:', resp)
+    }
+  } catch (err) {
+    log.error('getAllGuildIds threw an error:', err);
+    throw err;
+  }
+  const data = await resp.json();
+  const guildIds = [];
+  for (const guild of data) {
+    if (guild.features) {
+      // ignore staff affiliated servers
+      if (guild.features.includes("PREMIUM_TIER_3_OVERRIDE") || guild.features.includes("INTERNAL_EMPLOYEE_ONLY")) {
+        continue;
+      }
+    }
+    guildIds.push(guild.id);
+  }
+  return guildIds;
+}
+
+async function getAllDmIds(authToken) {
+  const API_URL = `https://discord.com/api/v9/users/@me/channels`;
+  let resp;
+  try {
+    resp = await fetch(API_URL, {
+      headers: {
+        'Authorization': authToken,
+      }
+    });
+    if (!resp.ok) {
+      throw Error('response was not ok:', resp)
+    }
+  } catch (err) {
+    log.error('getAllDmIds threw an error:', err);
+    throw err;
+  }
+  const data = await resp.json();
+  const dmIds = [];
+  for (const dm of data) {
+    dmIds.push(dm.id);
+  }
+  return dmIds;
+}
+
 // Main execution
 async function main() {
   try {
@@ -215,7 +291,7 @@ async function main() {
     if (!verboseLogging) {
       log.verb = function() {};
     }
-    
+
     // Set options
     undiscord.options = {
       ...undiscord.options,
@@ -224,34 +300,81 @@ async function main() {
       guildId: options.guildIds.length === 1 ? options.guildIds[0] : undefined,
       channelIds: undefined,
       guildIds: undefined,
+      ignoredGuildIds: undefined,
+      ignoredDmIds: undefined,
     };
-    // const finalOptions = { ... undiscord.options };
-    // delete finalOptions.authToken;
-    // log.info('Configuration:', finalOptions);
+
+    let shouldFetchDmIds = false;
+    let jobs = [];
+    if (undiscord.options.guildId === undefined) {
+      // guild ids are either 0 or many
+      if (options.guildIds.length === 0) {
+        // guild ids were NOT provided
+        shouldFetchDmIds = true;
+        log.info('Fetching all Guild IDs...');
+        let guildIds = await getAllGuildIds(options.authToken);
+        if (options.ignoredGuildIds) {
+          guildIds = guildIds.filter(id => !options.ignoredGuildIds.includes(id));
+        }
+        for (const guildId of guildIds) {
+          jobs.push({
+            guildId: guildId,
+          });
+        }
+      } else {
+        // multiple guild ids were provided
+        if (options.guildIds.includes('@me')) {
+          // one of the guild ids is for DMs @me
+          // channel ids cannot be provided if multiple guild ids were provided, so we will fetch them all
+          shouldFetchDmIds = true;
+        }
+        for (const guildId of options.guildIds) {
+          if (guildId === '@me' || (options.ignoredGuildIds && options.ignoredGuildIds.includes(guildId))) {
+            continue;
+          }
+          jobs.push({
+            guildId: guildId,
+          });
+        }
+      }
+    } else {
+      // guild id is exactly one
+      if (undiscord.options.guildId === '@me') {
+        if (undiscord.options.channelId === undefined) {
+          shouldFetchDmIds = true;
+        } else {
+          // no need to fetch dms, the user has provided them
+          for (const dmId of options.channelIds) {
+            jobs.push({
+              guildId: '@me',
+              channelId: dmId,
+            });
+          }
+        }
+      }
+    }
+    if (shouldFetchDmIds) {
+      log.info('Fetching all DM Channel IDs...');
+      let dmIds = await getAllDmIds(options.authToken);
+      if (options.ignoredDmIds) {
+        dmIds = dmIds.filter(id => !options.ignoredDmIds.includes(id));
+      }
+      for (const dmId of dmIds) {
+        jobs.push({
+          guildId: '@me',
+          channelId: dmId,
+        });
+      }
+    }
 
     // Run deletion
-    if (options.guildIds.length > 1) {
-      if (options.channelIds.length > 0) {
-        log.error('❌ Channel ID must be unset if multiple Guild IDs are provided');
-        showHelp();
-        process.exit(1);
+    if (jobs.length > 0) {
+      if (jobs.length === 1) {
+        log.warn('Running batch with exactly 1 job -- there is a bug in the batch creation code !');
       }
-      const jobs = options.guildIds.map(guildId => ({
-        guildId: guildId,
-      }))
-      log.info(`📦 Running batch job for ${jobs.length} guilds`);
-      await undiscord.runBatch(jobs)
-    } else if (options.channelIds.length > 1) {
-      // Multiple channels - run batch
-      const jobs = options.channelIds.map(channelId => ({
-        guildId: undiscord.options.guildId,
-        channelId: channelId,
-      }));
-      
-      log.info(`📦 Running batch job for ${jobs.length} channels`);
+      log.info(`📦 Running ${jobs.length} batch jobs`);
       await undiscord.runBatch(jobs);
     } else {
-      // Single channel
       log.info('🎯 Running deletion');
       await undiscord.run();
     }

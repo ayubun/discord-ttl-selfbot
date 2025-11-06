@@ -1,12 +1,9 @@
-# discord-ttl-selfbot
+# undiscord-cli
 
 work in progress~
 
 todos:
 - fix confirmation prompts (only works with --no-confirm atm)
-- fix pattern exclusions / matching
-- fix search delays not working ..
-- fix script ending after one iteration
 
 see repo description for info / goals c:
 
