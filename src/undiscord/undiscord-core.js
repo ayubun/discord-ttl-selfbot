@@ -32,6 +32,7 @@ class UndiscordCore {
     pattern: null, // Only delete messages that match the regex (insensitive)
     searchDelay: null, // Delay each time we fetch for more messages
     deleteDelay: null, // Delay between each delete operation
+    jobDelay: 30000, // Delay between subsequent jobs
     maxAttempt: 2, // Attempts to delete a single message if it fails
     askForConfirmation: true,
   };
@@ -87,8 +88,13 @@ class UndiscordCore {
 
     log.info(`Runnning batch with queue of ${queue.length} jobs`);
     for (let i = 0; i < queue.length; i++) {
+      if (i > 0) {
+        log.verb(`Waiting ${(this.options.jobDelay / 1000).toFixed(2)}s before next job...`);
+        await wait(this.options.jobDelay);
+      }
+
       const job = queue[i];
-      log.info('Starting job...', `(${i + 1}/${queue.length})`);
+      log.info('Starting job...', `(${i + 1}/${queue.length}):\n`, job);
 
       // set options
       this.options = {
@@ -228,11 +234,10 @@ class UndiscordCore {
     }
   }
 
-  async search() {
+  async search(retry = false) {
     let API_SEARCH_URL;
     if (this.options.guildId === '@me') API_SEARCH_URL = `https://discord.com/api/v9/channels/${this.options.channelId}/messages/`; // DMs
     else API_SEARCH_URL = `https://discord.com/api/v9/guilds/${this.options.guildId}/messages/`; // Server
-
     let resp;
     try {
       this.beforeRequest();
@@ -263,7 +268,7 @@ class UndiscordCore {
     // not indexed yet
     if (resp.status === 202) {
       let w = (await resp.json()).retry_after * 1000;
-      w = w || this.stats.searchDelay; // Fix retry_after 0
+      w = w || this.options.searchDelay; // Fix retry_after 0
       this.stats.throttledCount++;
       this.stats.throttledTotalTime += w;
       log.warn(`This channel isn't indexed yet. Waiting ${w}ms for discord to index it...`);
@@ -274,21 +279,27 @@ class UndiscordCore {
     if (!resp.ok) {
       // searching messages too fast
       if (resp.status === 429) {
-        let w = (await resp.json()).retry_after * 1000;
-        w = w || this.stats.searchDelay; // Fix retry_after 0
+        const body = await resp.json()
+        log.verb('Ratelimit body:', body);
+        let w = parseInt(body.retry_after * 1000);
+        w = w || this.options.searchDelay; // Fix retry_after 0
 
         this.stats.throttledCount++;
         this.stats.throttledTotalTime += w;
-        this.stats.searchDelay += w; // increase delay
-        w = this.stats.searchDelay;
+        this.options.searchDelay += w; // increase delay
+        w = this.options.searchDelay;
         log.warn(`Being rate limited by the API for ${w}ms! Increasing search delay...`);
         this.printStats();
         log.verb(`Cooling down for ${w * 2}ms before retrying...`);
 
         await wait(w * 2);
         return await this.search();
-      }
-      else {
+      } else if (resp.status === 403) {
+        // insufficient permissions -- guild is empty or specific channel isn't accessible
+        log.warn(`API responded with 403 - Insufficient Permissions when searching for messages:\n`, await resp.json());
+        this.state._seachResponse = {messages:[]};
+        return this.state._seachResponse;
+      } else {
         this.state.running = false;
         log.error(`Error searching messages, API responded with status ${resp.status}!\n`, await resp.json());
         throw resp;
@@ -297,6 +308,17 @@ class UndiscordCore {
     const data = await resp.json();
     this.state._seachResponse = data;
     console.debug(PREFIX, 'search', data);
+    if (!retry && this.state._seachResponse.messages.length === 0) {
+      if (this.state.grandTotal && this.state.delCount && this.state.failCount) {
+        if (this.state.grandTotal <= this.state.delCount + this.state.failCount) {
+          // it is expected that we get an empty page if the grand total is effectively complete
+          return data;
+        }
+      }
+      log.warn(`Search returned empty page! Waiting for ${this.options.searchDelay}ms then retrying once more before exiting...`);
+      await wait(this.options.searchDelay);
+      return await this.search(true);
+    }
     return data;
   }
 

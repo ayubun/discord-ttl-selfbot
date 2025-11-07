@@ -36,9 +36,14 @@ Options:
   --ignore-dm-id(s)    DM Channel ID(s) to IGNORE (comma-separated)
 
   --min-id             Only delete messages after this ID
-  --min-age            Only delete messages after this many days old
+  --max-age            Only delete messages younger than this many days
+                       E.g.: --max-age 30
+                             Delete all messages that are newer than 30 days old
+
   --max-id             Only delete messages before this ID
-  --max-age            Only delete messages before this many days old
+  --min-age            Only delete messages older than this many days
+                       E.g.: --min-age 30
+                             Delete all messages that are at least 30 days old
 
   --content            Filter messages containing this text
   --has-link           Filter messages with links (true/false)
@@ -179,7 +184,7 @@ for (let i = 0; i < args.length; i++) {
       break;
     case '--exclude-dms':
       excludeDms = true;
-      break
+      break;
     case '--pattern':
       options.pattern = nextArg;
       i++;
@@ -241,29 +246,29 @@ if (!options.guildIds || options.guildIds.length === 0) {
   }
 }
 
-if (options.minId && options.minAge) {
-  console.error('Error: --min-id and --min-age are mutually exclusive');
-  showHelp();
-  process.exit(1);
-} else {
-  if (options.minAge) {
-    const date = new Date()
-    date.setDate(date.getDate() + options.minAge);
-    options.minId = toSnowflake(date);
-    delete options.minAge;
-  }
-}
-
-if (options.maxId && options.maxAge) {
-  console.error('Error: --max-id and --max-age are mutually exclusive');
+if (options.minId && options.maxAge) {
+  console.error('Error: --min-id and --max-age are mutually exclusive');
   showHelp();
   process.exit(1);
 } else {
   if (options.maxAge) {
     const date = new Date()
-    date.setDate(date.getDate() + options.maxAge);
-    options.maxId = toSnowflake(date);
+    date.setDate(date.getDate() - options.maxAge);
+    options.minId = toSnowflake(date);
     delete options.maxAge;
+  }
+}
+
+if (options.maxId && options.maxAge) {
+  console.error('Error: --max-id and --min-age are mutually exclusive');
+  showHelp();
+  process.exit(1);
+} else {
+  if (options.minAge) {
+    const date = new Date()
+    date.setDate(date.getDate() - options.minAge);
+    options.maxId = toSnowflake(date);
+    delete options.minAge;
   }
 }
 
@@ -280,11 +285,13 @@ const undiscord = new UndiscordCore();
 process.on('SIGINT', () => {
   log.warn('Received SIGINT, stopping...');
   undiscord.stop();
+  process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   log.warn('Received SIGTERM, stopping...');
   undiscord.stop();
+  process.exit(0);
 });
 
 // Configure event handlers
@@ -300,7 +307,6 @@ undiscord.onPage = (state, stats) => {
 undiscord.onStop = (state, stats) => {
   log.success('✅ Deletion process completed');
   log.info(`Final stats - Deleted: ${state.delCount}, Failed: ${state.failCount}`);
-  process.exit(0);
 };
 
 async function getAllGuildIds(authToken) {
