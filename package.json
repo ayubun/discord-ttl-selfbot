@@ -1,24 +1,20 @@
 {
-  "name": "discord-ttl-selfbot",
-  "nameFull": "Discord TTL Selfbot",
+  "name": "undiscord-cli",
+  "nameFull": "Undiscord CLI",
   "version": "0.0.0",
-  "description": "A selfbot for Discord that allows you to set a TTL for messages across all channels",
+  "description": "A fork of victornpb/undiscord adapted into a CLI",
   "license": "MIT",
   "engines": {
     "node": ">=18"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ayubun/discord-ttl-selfbot.git"
+    "url": "git+https://github.com/ayubun/undiscord-cli.git"
   },
-  "bugs": {
-    "url": "https://github.com/ayubun/discord-ttl-selfbot/discussions"
-  },
-  "homepage": "https://github.com/ayubun/discord-ttl-selfbot",
+  "homepage": "https://github.com/ayubun/undiscord-cli",
   "author": "ayubun",
-  "main": "discord-ttl-selfbot.user.js",
   "bin": {
-    "discord-ttl-selfbot": "src/cli.js"
+    "undiscord-cli": "src/cli.js"
   },
   "type": "module",
   "scripts": {
