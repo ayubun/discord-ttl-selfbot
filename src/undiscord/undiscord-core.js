@@ -44,6 +44,7 @@ class UndiscordCore {
     grandTotal: 0,
     offset: 0,
     iterations: 0,
+    emptyPageRetries: 0,
 
     _seachResponse: null,
     _messagesToDelete: [],
@@ -309,13 +310,14 @@ class UndiscordCore {
     this.state._seachResponse = data;
     console.debug(PREFIX, 'search', data);
     if (!retry && this.state._seachResponse.messages.length === 0) {
-      if (this.state.grandTotal && this.state.delCount && this.state.failCount) {
-        if (this.state.grandTotal <= this.state.delCount + this.state.failCount) {
+      if (this.state.grandTotal && this.state.delCount && this.state.failCount && this.state.iterations) {
+        if (this.state.grandTotal <= this.state.delCount + this.state.failCount && this.state.iterations > 0) {
           // it is expected that we get an empty page if the grand total is effectively complete
           return data;
         }
       }
       log.warn(`Search returned empty page! Waiting for ${this.options.searchDelay}ms then retrying once more before exiting...`);
+      this.state.emptyPageRetries++;
       await wait(this.options.searchDelay);
       return await this.search(true);
     }
@@ -334,7 +336,8 @@ class UndiscordCore {
 
     // we can only delete some types of messages, system messages are not deletable.
     let messagesToDelete = discoveredMessages;
-    messagesToDelete = messagesToDelete.filter(msg => msg.type === 0 || (msg.type >= 6 && msg.type <= 21));
+    // type 46 = polls (self-deletable)
+    messagesToDelete = messagesToDelete.filter(msg => msg.type === 0 || msg.type === 46 || (msg.type >= 6 && msg.type <= 19));
     messagesToDelete = messagesToDelete.filter(msg => msg.pinned ? this.options.includePinned : true);
 
     // custom filter of messages
