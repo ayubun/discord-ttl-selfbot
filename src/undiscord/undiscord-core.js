@@ -74,6 +74,7 @@ class UndiscordCore {
       grandTotal: 0,
       offset: 0,
       iterations: 0,
+      emptyPageRetries: 0,
 
       _seachResponse: null,
       _messagesToDelete: [],
