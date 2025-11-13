@@ -378,13 +378,21 @@ class UndiscordCore {
       let attempt = 0;
       while (attempt < this.options.maxAttempt) {
         const result = await this.deleteMessage(message);
-
-        if (result === 'RETRY') {
-          attempt++;
+        attempt++;
+        if (result === 'RETRY' || result === 'FAILED') {
+          if (attempt >= this.options.maxAttempt) {
+            this.state.offset++;
+            this.state.failCount++;
+            break;
+          }
           log.verb(`Retrying in ${this.options.deleteDelay}ms... (${attempt}/${this.options.maxAttempt})`);
           await wait(this.options.deleteDelay);
+          continue;
+        } else if (result === 'FAIL_SKIP') {
+          this.state.offset++;
+          this.state.failCount++;
         }
-        else break;
+        break;
       }
 
       this.calcEtr();
@@ -410,7 +418,6 @@ class UndiscordCore {
       // no response error (e.g. network error)
       log.error('Delete request throwed an error:', err);
       log.verb('Related object:', redact(JSON.stringify(message)));
-      this.state.failCount++;
       return 'FAILED';
     }
 
@@ -426,6 +433,9 @@ class UndiscordCore {
         log.verb(`Cooling down for ${w * 2}ms before retrying...`);
         await wait(w * 2);
         return 'RETRY';
+      } else if (resp.status === 403) {
+        log.warn('Insufficient permissions to delete message. Skipping...');
+        return 'FAIL_SKIP';
       } else {
         const body = await resp.text();
 
@@ -440,7 +450,6 @@ class UndiscordCore {
 
           log.error(`Error deleting message, API responded with status ${resp.status}!`, r);
           log.verb('Related object:', redact(JSON.stringify(message)));
-          this.state.failCount++;
           return 'FAILED';
         } catch (e) {
           log.error(`Fail to parse JSON. API responded with status ${resp.status}!`, body);
@@ -473,15 +482,12 @@ class UndiscordCore {
     } catch (err) {
       // no response error (e.g. network error)
       log.error(`Unarchive request for channel id ${channel_id} threw an error:`, err);
-      this.state.failCount++;
       return 'FAILED';
     }
 
     if (!resp.ok) {
       log.error('Unarchive request returned not-okay response:', resp);
       log.warn('This message will be skipped');
-      this.state.offset++;
-      this.state.failCount++;
       return 'FAIL_SKIP';
     }
 
