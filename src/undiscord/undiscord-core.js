@@ -35,6 +35,7 @@ class UndiscordCore {
     jobDelay: 30000, // Delay between subsequent jobs
     maxAttempt: 2, // Attempts to delete a single message if it fails
     askForConfirmation: true,
+    customHeaders: {},
   };
 
   state = {
@@ -257,6 +258,7 @@ class UndiscordCore {
         ['include_nsfw', this.options.includeNsfw ? true : undefined],
       ]), {
         headers: {
+          ...this.options.customHeaders,
           'Authorization': this.options.authToken,
         }
       });
@@ -411,6 +413,7 @@ class UndiscordCore {
       resp = await fetch(API_DELETE_URL, {
         method: 'DELETE',
         headers: {
+          ...this.options.customHeaders,
           'Authorization': this.options.authToken,
         },
       });
@@ -473,6 +476,7 @@ class UndiscordCore {
       resp = await fetch(API_CHANNELS_URL, {
         method: 'PATCH',
         headers: {
+          ...this.options.customHeaders,
           'Authorization': this.options.authToken,
           'Content-Type': 'application/json',
           'Accept': 'application/json'

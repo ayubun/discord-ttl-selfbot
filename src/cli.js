@@ -56,6 +56,9 @@ Options:
   --delete-delay       Delay between delete requests (ms, default: 1000)
   --max-attempts       Max attempts to delete a message (default: 2)
 
+  --custom-headers     (ADVANCED) Append custom request headers for all requests.
+                                  This parameter expects a JSON string.
+
   --verbose, -v        Show verbose logs
   --debug, -d          Show debug logs
   --help, -h           Show this help message
@@ -194,13 +197,16 @@ for (let i = 0; i < args.length; i++) {
       i++;
       break;
     case '--delete-delay':
-      options.deleteDelay = parseInt(nextArg) || 1000;
+      options.deleteDelay = parseInt(nextArg) || 2000;
       i++;
       break;
     case '--max-attempts':
-      options.maxAttempt = parseInt(nextArg) || 2;
+      options.maxAttempt = parseInt(nextArg) || 3;
       i++;
       break;
+    case '--custom-headers':
+      options.customHeaders = JSON.parse(nextArg) || undefined;
+      i++;
     case '--no-confirm':
       options.askForConfirmation = false;
       break;
@@ -274,8 +280,8 @@ if (options.maxId && options.maxAge) {
 
 // Set defaults
 options.searchDelay = options.searchDelay || 30000;
-options.deleteDelay = options.deleteDelay || 1000;
-options.maxAttempt = options.maxAttempt || 2;
+options.deleteDelay = options.deleteDelay || 2000;
+options.maxAttempt = options.maxAttempt || 3;
 options.askForConfirmation = false;
 
 // Create and configure UndiscordCore
@@ -309,12 +315,13 @@ undiscord.onStop = (state, stats) => {
   log.info(`Final stats - Deleted: ${state.delCount}, Failed: ${state.failCount}`);
 };
 
-async function getAllGuildIds(authToken) {
+async function getAllGuildIds(authToken, customHeaders) {
   const API_URL = `https://discord.com/api/v9/users/@me/guilds`;
   let resp;
   try {
     resp = await fetch(API_URL, {
       headers: {
+        ...customHeaders,
         'Authorization': authToken,
       }
     });
@@ -339,12 +346,13 @@ async function getAllGuildIds(authToken) {
   return guildIds;
 }
 
-async function getAllDmIds(authToken) {
+async function getAllDmIds(authToken, customHeaders) {
   const API_URL = `https://discord.com/api/v9/users/@me/channels`;
   let resp;
   try {
     resp = await fetch(API_URL, {
       headers: {
+        ...customHeaders,
         'Authorization': authToken,
       }
     });
@@ -396,7 +404,7 @@ async function main() {
         // guild ids were NOT provided
         shouldFetchDmIds = true;
         log.info('Fetching all Guild IDs...');
-        let guildIds = await getAllGuildIds(options.authToken);
+        let guildIds = await getAllGuildIds(options.authToken, options.customHeaders);
         if (options.ignoredGuildIds) {
           guildIds = guildIds.filter(id => !options.ignoredGuildIds.includes(id));
         }
@@ -439,7 +447,7 @@ async function main() {
     }
     if (shouldFetchDmIds && !excludeDms) {
       log.info('Fetching all DM Channel IDs...');
-      let dmIds = await getAllDmIds(options.authToken);
+      let dmIds = await getAllDmIds(options.authToken, options.customHeaders);
       if (options.ignoredDmIds) {
         dmIds = dmIds.filter(id => !options.ignoredDmIds.includes(id));
       }
